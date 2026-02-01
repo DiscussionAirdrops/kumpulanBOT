@@ -18,6 +18,10 @@ import aiohttp
 import string
 from threading import Thread
 from flask import Flask, jsonify
+from dotenv import load_dotenv
+
+# Load environment variables dari .env file
+load_dotenv()
 
 # --- MYSQL IMPORTS ---
 try:
@@ -52,51 +56,51 @@ from simpleeval import simple_eval
 
 # TIDAK PERLU .env - CREDENTIALS LANGSUNG DI SINI
 # ==========================================
-# KONFIGURASI UTAMA (HARDCODE)
+# KONFIGURASI UTAMA (DARI .env FILE)
 # ==========================================
 
 # --- TOKEN & API KEYS ---
-TELEGRAM_BOT_TOKEN = "tokenya"
-DISCORD_BOT_TOKEN = "tokenya"
-GROQ_API_KEY = "apigroq"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # --- MYSQL CONFIGURATION ---
 MYSQL_CONFIG = {
-    'host': 'localhost',
-    'port': 3306,
-    'user': 'base',
-    'password': 'pas',
-    'database': 'base'
+    'host': os.getenv('MYSQL_HOST', 'localhost'),
+    'port': int(os.getenv('MYSQL_PORT', 3306)),
+    'user': os.getenv('MYSQL_USER', ''),
+    'password': os.getenv('MYSQL_PASSWORD', ''),
+    'database': os.getenv('MYSQL_DATABASE', '')
 }
 
 # --- FIREBASE CONFIGURATION (FIRESTORE) ---
-FIREBASE_PROJECT_ID = "nama"
-FIREBASE_APP_ID = "idnya"
-SERVICE_ACCOUNT_KEY_PATH = "serviceAccountKey.json"
-TARGET_FIRESTORE_USER_ID = "id"
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+FIREBASE_APP_ID = os.getenv("FIREBASE_APP_ID", "")
+SERVICE_ACCOUNT_KEY_PATH = os.getenv("SERVICE_ACCOUNT_KEY_PATH", "serviceAccountKey.json")
+TARGET_FIRESTORE_USER_ID = os.getenv("TARGET_FIRESTORE_USER_ID", "")
 
 # --- IDs & LINKS ---
-ADMIN_USER_IDS = [admin, admin]
-TARGET_TELEGRAM_CHAT_ID = -1002492065356  # Grup @Warkop_CR
+ADMIN_USER_IDS = [int(x.strip()) for x in os.getenv("ADMIN_USER_IDS", "1642493057,777000").split(",")]
+TARGET_TELEGRAM_CHAT_ID = int(os.getenv("TARGET_TELEGRAM_CHAT_ID", "-1002492065356"))
 
 # ID Discord Channels
-ID_DISCORD_BRIDGE = 1463438272440172641
-ID_DISCORD_YOUTUBE = 1463439746989690942
-ID_DISCORD_TWITTER = 1463574822540804137
-ID_VERIFIKASI = 1463490143561449483
-ID_WELCOME = 1463592510797385974
-ID_CHAT_INDO = 1463440826750206109
-ID_CHAT_ENGLISH = 1463440920522395743
-NAMA_ROLE_VERIFIED = 'Pejuang WEB3'
+ID_DISCORD_BRIDGE = int(os.getenv("ID_DISCORD_BRIDGE", "1463438272440172641"))
+ID_DISCORD_YOUTUBE = int(os.getenv("ID_DISCORD_YOUTUBE", "1463439746989690942"))
+ID_DISCORD_TWITTER = int(os.getenv("ID_DISCORD_TWITTER", "1463574822540804137"))
+ID_VERIFIKASI = int(os.getenv("ID_VERIFIKASI", "1463490143561449483"))
+ID_WELCOME = int(os.getenv("ID_WELCOME", "1463592510797385974"))
+ID_CHAT_INDO = int(os.getenv("ID_CHAT_INDO", "1463440826750206109"))
+ID_CHAT_ENGLISH = int(os.getenv("ID_CHAT_ENGLISH", "1463440920522395743"))
+NAMA_ROLE_VERIFIED = os.getenv("NAMA_ROLE_VERIFIED", "Pejuang WEB3")
 
 # Branding Links
-REF_LINK = 'https://bingx.pro/invite/JFQMWM'
-TWITTER_LINK = 'https://twitter.com/inokrambol'
+REF_LINK = os.getenv("REF_LINK", "https://bingx.pro/invite/JFQMWM")
+TWITTER_LINK = os.getenv("TWITTER_LINK", "https://twitter.com/inokrambol")
 
 # --- FLASK API CONFIGURATION ---
-FLASK_HOST = '0.0.0.0'
-FLASK_PORT = 5000
-FLASK_DEBUG = False
+FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
+FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"
 
 # --- SETTINGS ---
 JSON_FILE = "airdrop_recap.json"
@@ -530,6 +534,11 @@ async def unified_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = msg.text or msg.caption or ""
     text_lower = text.lower()
     user_id = msg.from_user.id if msg.from_user else 0
+    
+    # DEBUG: Log semua message dengan hashtag
+    if '#' in text:
+        tags_found = re.findall(r"#(\w+)", text)
+        logging.info(f"[DEBUG] Message received - Tags: {tags_found}, Text preview: {text[:100]}")
 
     # --- 0. ANTI SPAM (Satpam Otomatis) ---
     if not is_admin(user_id):
@@ -702,15 +711,33 @@ Jawab dengan gaya INO AI yang gaul!"""
                     except Exception as e:
                         logging.warning(f"Photo download error: {e}")
                 
-                # Kirim ke Discord
-                ch = discord_bot.get_channel(ID_DISCORD_BRIDGE)
+                # Tentukan channel Discord berdasarkan hashtag
+                channel_id = ID_DISCORD_BRIDGE  # Default channel
+                
+                # Routing berdasarkan hashtag
+                tags_lower = [tag.lower() for tag in tags]
+                logging.info(f"[ROUTING] Tags detected: {tags_lower}, Full text: {text[:100]}")
+                
+                if 'youtube' in tags_lower:
+                    channel_id = ID_DISCORD_YOUTUBE
+                    logging.info(f"✅ [ROUTING] MATCHED YOUTUBE! Routing to YouTube channel: {ID_DISCORD_YOUTUBE}")
+                elif 'twitter' in tags_lower:
+                    channel_id = ID_DISCORD_TWITTER
+                    logging.info(f"✅ [ROUTING] MATCHED TWITTER! Routing to Twitter channel: {ID_DISCORD_TWITTER}")
+                else:
+                    logging.info(f"[ROUTING] No specific match - Routing to Bridge channel (default): {ID_DISCORD_BRIDGE}")
+                
+                # Kirim ke Discord ke channel yang sesuai
+                ch = discord_bot.get_channel(channel_id)
                 if ch:
                     if file_obj:
                         asyncio.run_coroutine_threadsafe(ch.send(embed=embed, file=file_obj), discord_bot.loop)
-                        logging.info(f"Forward to Discord dengan photo")
+                        logging.info(f"Forward to Discord ({channel_id}) dengan photo")
                     else:
                         asyncio.run_coroutine_threadsafe(ch.send(embed=embed), discord_bot.loop)
-                        logging.info(f"Forward to Discord: {text[:50]}")
+                        logging.info(f"Forward to Discord ({channel_id}): {text[:50]}")
+                else:
+                    logging.warning(f"Channel {channel_id} tidak ditemukan!")
             except Exception as e:
                 logging.error(f"Discord send error: {e}")
         
@@ -870,21 +897,36 @@ async def show_daily_recap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Error: {str(e)[:100]}")
 
 async def recap_now_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command /recap_now - Manual trigger scheduler untuk posting recap sekarang"""
+    """Command /recap_now - Manual trigger scheduler untuk posting recap ke group (admin only)"""
     if not is_admin(update.message.from_user.id):
-        await update.message.reply_text("❌ Hanya admin!")
+        await update.message.reply_text("❌ Hanya admin yang bisa trigger /recap_now!")
         return
     
     try:
-        msg = await update.message.reply_text("⏳ Posting recap sekarang...")
+        msg = await update.message.reply_text("⏳ Posting recap ke group sekarang...")
         
-        # Trigger scheduler job langsung
-        await send_daily_recap_job(context)
+        # Trigger scheduler job ke TARGET_TELEGRAM_CHAT_ID (group/channel)
+        await send_daily_recap_job(context, chat_id=None)
         
-        await msg.edit_text("✅ Recap berhasil diposting ke Telegram & Discord!")
+        await msg.edit_text("✅ Recap berhasil diposting ke group & Discord!")
     except Exception as e:
         await msg.edit_text(f"❌ Error: {str(e)[:100]}")
         logging.error(f"recap_now error: {e}")
+
+async def recap_me_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command /recap_me - Kirim recap ke private chat user (siapa saja bisa)"""
+    user_id = update.message.from_user.id
+    
+    try:
+        msg = await update.message.reply_text("⏳ Generate recap dan kirim ke private chat Anda...")
+        
+        # Trigger scheduler job ke private chat user
+        await send_daily_recap_job(context, chat_id=user_id)
+        
+        await msg.edit_text("✅ Recap berhasil dikirim ke private chat Anda!")
+    except Exception as e:
+        await msg.edit_text(f"❌ Error: {str(e)[:100]}")
+        logging.error(f"recap_me error: {e}")
 
 async def clear_recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command /hapus_rekap - Hapus semua airdrop (admin only)"""
@@ -901,10 +943,22 @@ async def clear_recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)[:100]}")
 
-async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE):
-    """Scheduler job - Kirim rekap harian per kategori hashtag ke Telegram & Discord jam 00:00"""
+async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int = None):
+    """Scheduler job - Kirim rekap harian per kategori hashtag ke Telegram & Discord
+    
+    Args:
+        context: Telegram context
+        chat_id: Optional - Jika ada, kirim ke chat_id ini. Jika None, kirim ke TARGET_TELEGRAM_CHAT_ID (default)
+    """
     try:
+        # Default: kirim ke TARGET_TELEGRAM_CHAT_ID (group)
+        destination_chat_id = chat_id or TARGET_TELEGRAM_CHAT_ID
+        
+        logging.info(f"[SCHEDULER] Starting daily recap job at {datetime.now(JAKARTA_TZ)}")
+        logging.info(f"[SCHEDULER] Destination: {destination_chat_id}")
+        
         yesterday = (datetime.now(JAKARTA_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+        logging.info(f"[SCHEDULER] Querying data for {yesterday}")
         
         # Query dari SQLite - data sebenarnya ada di sini
         conn_sqlite = sqlite3.connect('airdrop.db')
@@ -913,6 +967,8 @@ async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE):
             (f"{yesterday}%",)
         ).fetchall()
         conn_sqlite.close()
+        
+        logging.info(f"[SCHEDULER] Found {len(rows)} entries for {yesterday}")
         
         # Jika tidak ada airdrop, tetap posting pesan kosong (jangan return)
         if not rows:
@@ -924,6 +980,8 @@ async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE):
             'info': [],
             'whitelist': [],
             'update': [],
+            'youtube': [],
+            'twitter': [],
             'airdrop': [],
             'retro': [],
             'testnet': [],
@@ -956,6 +1014,10 @@ async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE):
                 categories['whitelist'].append((title, telegram_link))
             elif '#update' in content_lower:
                 categories['update'].append((title, telegram_link))
+            elif '#youtube' in content_lower:
+                categories['youtube'].append((title, telegram_link))
+            elif '#twitter' in content_lower:
+                categories['twitter'].append((title, telegram_link))
             elif '#retro' in content_lower or '#retroactive' in content_lower:
                 categories['retro'].append((title, telegram_link))
             elif '#testnet' in content_lower:
@@ -992,6 +1054,20 @@ async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE):
         if categories['update']:
             msg_tg += "📊 Garapan Update\n"
             for i, (title, link) in enumerate(categories['update'], 1):
+                msg_tg += f"{i}. [{title}]({link})\n"
+            msg_tg += "\n"
+            has_content = True
+        
+        if categories['youtube']:
+            msg_tg += "📺 YouTube Update\n"
+            for i, (title, link) in enumerate(categories['youtube'], 1):
+                msg_tg += f"{i}. [{title}]({link})\n"
+            msg_tg += "\n"
+            has_content = True
+        
+        if categories['twitter']:
+            msg_tg += "🐦 Twitter Update\n"
+            for i, (title, link) in enumerate(categories['twitter'], 1):
                 msg_tg += f"{i}. [{title}]({link})\n"
             msg_tg += "\n"
             has_content = True
@@ -1052,27 +1128,52 @@ async def send_daily_recap_job(context: ContextTypes.DEFAULT_TYPE):
         
         # Kirim ke Telegram
         try:
+            logging.info(f"[SCHEDULER] Sending recap to Telegram chat {destination_chat_id}")
             await context.bot.send_message(
-                TARGET_TELEGRAM_CHAT_ID,
+                destination_chat_id,
                 text=msg_tg,
                 parse_mode=ParseMode.MARKDOWN,
                 disable_web_page_preview=True
             )
-            logging.info(f"✅ Recap sent to Telegram for {yesterday}")
+            logging.info(f"✅ [SCHEDULER] Recap successfully sent to Telegram (chat_id: {destination_chat_id}) for {yesterday}")
         except Exception as e:
-            logging.error(f"❌ Telegram recap error: {e}")
+            logging.error(f"❌ [SCHEDULER] Telegram recap error: {str(e)}")
+            logging.error(f"Chat ID: {destination_chat_id}, Message length: {len(msg_tg)}")
     
     except Exception as e:
-        logging.error(f"❌ Daily recap job error: {e}")
-            
-    except Exception as e:
-        logging.error(f"❌ Daily recap job error: {e}")
+        logging.error(f"❌ [SCHEDULER] Daily recap job error: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
 
 # ==========================================
 # MAIN SETUP
 # ==========================================
 
 def main():
+    # ==========================================
+    # CRITICAL: Prevent Multiple Bot Instances
+    # ==========================================
+    import os
+    pid_file = "/tmp/airdrop_bot.pid"
+    
+    # Check jika ada instance bot yang sudah jalan
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, 'r') as f:
+                old_pid = int(f.read().strip())
+            # Check apakah process dengan PID lama masih jalan
+            os.kill(old_pid, 0)  # Jika error, process sudah dead
+            logging.error(f"❌ Bot sudah jalan dengan PID: {old_pid}. STOP existing instance dulu!")
+            logging.error(f"❌ Gunakan: kill {old_pid}")
+            return  # Exit tanpa start bot baru
+        except (OSError, ValueError):
+            pass  # Process lama sudah dead, lanjut
+    
+    # Simpan PID bot saat ini
+    with open(pid_file, 'w') as f:
+        f.write(str(os.getpid()))
+    logging.info(f"✅ Bot instance started with PID: {os.getpid()}")
+    
     # Start Flask in background
     flask_thread = Thread(target=start_flask, daemon=True)
     flask_thread.start()
@@ -1086,6 +1187,7 @@ def main():
     app.add_handler(CommandHandler("rekap", show_recap))
     app.add_handler(CommandHandler("rekaphari", show_daily_recap))
     app.add_handler(CommandHandler("recap_now", recap_now_command))
+    app.add_handler(CommandHandler("recap_me", recap_me_command))
     app.add_handler(CommandHandler("hapus_rekap", clear_recap_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("tanya", tanya_command))
@@ -1093,12 +1195,23 @@ def main():
     
     # Setup Daily Recap Scheduler (jam 00:00 / 12 malam, timezone Jakarta)
     job_queue = app.job_queue
-    job_queue.run_daily(
-        send_daily_recap_job,
-        time=time(hour=0, minute=0, tzinfo=JAKARTA_TZ),
-        days=[0, 1, 2, 3, 4, 5, 6]
-    )
-    logging.info("✅ Daily recap scheduler active (00:00 setiap hari, timezone: Jakarta)")
+    job_queue.start()  # PENTING: Scheduler harus di-start!
+    
+    # Check: Prevent duplikasi scheduler job jika bot restart/multiple instance
+    existing_jobs = job_queue.jobs()
+    has_daily_job = any(job.callback == send_daily_recap_job for job in existing_jobs)
+    
+    if not has_daily_job:
+        job_queue.run_daily(
+            send_daily_recap_job,
+            time=time(hour=0, minute=0, tzinfo=JAKARTA_TZ),
+            days=[0, 1, 2, 3, 4, 5, 6]
+        )
+        logging.info("✅ Daily recap scheduler CREATED (00:00 setiap hari, timezone: Jakarta)")
+    else:
+        logging.info("⚠️ Daily recap scheduler ALREADY EXISTS - skipping duplicate")
+    
+    logging.info(f"📊 Total active jobs: {len(job_queue.jobs())}")
     
     # Discord Bot
     discord_thread = Thread(target=discord_bot.run, args=(DISCORD_BOT_TOKEN,), daemon=True)
